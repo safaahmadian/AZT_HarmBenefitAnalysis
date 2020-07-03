@@ -61,18 +61,14 @@ treatment_effect = 0.73
 
 hearing_loss_params =  c(0.155292884, 0.064346722) # retrieved from Li's study
 hearing_loss_RR = 1.168 # in 20 years
-background_hearing_rates <- c(0.01593,0.01752,0.0193,0.02124,0.02329,0.02555, 0.0281,0.03104,
-                                0.03429,0.03779,0.04165,0.04599, 0.05091,0.05631, 0.0621,0.06846,
-                                0.07555, 0.08353,0.09214,0.10129)
+background_hearing_rates <- rep(0.0001, 20)
 hearing_loss_cost = 0
 hearing_loss_qaly = 0
   
 gast_evnt_params = c(0.171429116, 0.226130529) # retrieved from Li's study
 gast_evnt_RR = 1.187 
 # in 20 years
-background_gast_rates <- c(0.01593,0.01752,0.0193,0.02124,0.02329,0.02555, 0.0281,0.03104,
-                                0.03429,0.03779,0.04165,0.04599, 0.05091,0.05631, 0.0621,0.06846,
-                                0.07555, 0.08353,0.09214,0.10129)
+background_gast_rates <- rep(0.0001, 20)
 gast_evnt_cost = 0
 gast_evnt_qaly = 0
 
@@ -81,21 +77,29 @@ adv_evnt_qaly = 0
 # ================================================================== #
 
 set_params <- function(){
-  for (i in c(1:disease_states)){
-    exac_rates_notx[i] <<- qgamma(runif(1),shape = exac_params_mat[i,1], scale = exac_params_mat[i,2]) # '<<-' resets the global value with the new value
-    costs[i] <<- qgamma(runif(1),shape = cost_params_mat[i,1], scale = cost_params_mat[i,2])
-    qalys[i] <<- qnorm(runif(1),mean = qaly_params_mat[i,1], sd = qaly_params_mat[i,2])
+  for (i in c(1:(disease_states))){
+    exac_rates_notx[i] <<- rgamma(1, shape = exac_params_mat[i,1], scale = exac_params_mat[i,2]) # '<<-' resets the global value with the new value
+    costs[i] <<- rgamma(1,shape = cost_params_mat[i,1], scale = cost_params_mat[i,2])
+    qalys[i] <<- rnorm(1,mean = qaly_params_mat[i,1], sd = qaly_params_mat[i,2])
     if (i != disease_states){
-      trans_to_nexts[i] <<- qgamma(runif(1),shape = trans_params_mat[i,1], scale = trans_params_mat[i,2])
+      trans_to_nexts[i] <<- rgamma(1,shape = trans_params_mat[i,1], scale = trans_params_mat[i,2])
     }
-    death_rates[i] <<- exp(qnorm(runif(1),mean = death_params_mat[i,1], sd = death_params_mat[i,2]))
+    death_rates[i] <<- exp(rnorm(1,mean = death_params_mat[i,1], sd = death_params_mat[i,2]))
   }
-  exac_cost <<- qgamma(runif(1),shape = exac_cost_params[1], scale = exac_cost_params[2])
-  exac_qaly <<- qnorm(runif(1),mean = exac_qaly_params[1], sd= exac_qaly_params[2])
+  #duplicate for adverse-event states
+  exac_rates_notx <<- c(exac_rates_notx,exac_rates_notx)
+  costs <<- c(costs,costs)
+  qalys <<- c(qalys,qalys)
+  trans_to_nexts <<- c(trans_to_nexts,0,trans_to_nexts,0)
+  print(trans_to_nexts)
+  death_rates<<- c(death_rates,death_rates)
+
+  exac_cost <<- rgamma(1,shape = exac_cost_params[1], scale = exac_cost_params[2])
+  exac_qaly <<- rnorm(1,mean = exac_qaly_params[1], sd= exac_qaly_params[2])
   
-  treatment_effect <<- exp(qnorm(runif(1),mean = tx_effect_params[1], sd = tx_effect_params[2]))
-  hearing_loss_RR <<- exp(qnorm(runif(1),mean = hearing_loss_params[1], sd = hearing_loss_params[2]))
-  gast_evnt_RR <<- exp(qnorm(runif(1),mean = gast_evnt_params[1], sd = gast_evnt_params[2]))
+  treatment_effect <<- exp(rnorm(1,mean = tx_effect_params[1], sd = tx_effect_params[2]))
+  hearing_loss_RR <<- exp(rnorm(1,mean = hearing_loss_params[1], sd = hearing_loss_params[2]))
+  gast_evnt_RR <<- exp(rnorm(1,mean = gast_evnt_params[1], sd = gast_evnt_params[2]))
   
   # gast_evnt_cost <<- qgamma()
   # gast_evnt_qaly <<- qgamma()
@@ -105,43 +109,43 @@ set_params <- function(){
   
 }
 
-get_updated_tx_effect <- function(year){ # will change according to the resistance effect but if it affect the rate, it would be much better
-  return(treatment_effect)
+resistance_effect <- function(year, odds_ratio){ # will change according to the resistance effect but if it affect the rate, it would be much better
+  return(odds_ratio)
 }
 
-get_exac_rates_tx  <- function(){ # change rate -> prob -> odds and then the reverse. 
-  probs = lapply(exac_rates_notx, function(x) (1-exp(-x)))
-  odds = lapply(probs,function(x) (x/(1-x)))
-  # odds_tx = get_updated_tx_effect(year)*unlist(odds) # for resistance effect
-  odds_tx = treatment_effect*unlist(odds)
-  exac_rates_tx = lapply(odds_tx,function(x) (x/(1+x)))
-  return(exac_rates_tx)
+change_by_odds <- function(rate, odds_ratio){ # change rate -> prob -> odds and then the reverse. 
+  prob = 1-exp(-rate)
+  odds = prob/(1-prob)
+  new_odds = odds_ratio*odds
+  new_prob = new_odds/(1+new_odds)
+  return(new_prob)
 }
 
 
-model_state <- function(id, name, exac_rate, cost, qaly, trans_list, adv_evnt) {
-  value <- list(id = id, name = name, exac_rate = exac_rate, cost = cost, qaly = qaly, trans_list = trans_list, adv_evnt = adv_evnt)
-  attr(value, 'class') <- 'model_state' #  call like: print(attr(states_list[[1]],'class'))
-  
+model_state <- function(name, exac_rate, cost, qaly, trans_list, has_adv_evnt) {
+  value <- list(name = name, exac_rate = exac_rate, cost = cost, qaly = qaly, trans_list = trans_list, has_adv_evnt = has_adv_evnt)
+  attr(value, 'class') <- 'model_state' #  test it with: print(attr(states_list[[1]],'class'))
   return(value)
 }
 
 print.model_state<- function(obj){
-  cat('ID = ', obj$id, '\n')
   cat('Name = ', obj$name, '\n')
   cat('Exac_rate = ', obj$exac_rate, '\n')
   cat('Cost = ', obj$cost, '\n')
   cat('QALY = ', obj$qaly, '\n')
   cat('Transition list = ', obj$trans_list, '\n')
-  cat('get treatment? ', obj$treatment, '\n')
+  cat('get treatment? ', obj$has_adv_evnt, '\n')
 }
 
-fill_state_trans <- function(i){ # should be updated for treatment_group and treatment = TRUE or FALSE
-  trans_list = integer(total_states)
-  if (i != disease_states){
-    trans_list[i+1] = trans_to_nexts[i]
+fill_state_trans <- function(i){ 
+  trans_list = integer(total_states_tx_group)
+  trans_list[i+1] = trans_to_nexts[i]
+  if (disease_states  < i && i < total_states_tx_group ){ #!!!!!!!! HEARINH _ RR and GAS_RR are not considered
+    trans_list[i-disease_states] = 1 # The occurance of adverse effects is not associated with the disease-state so this probability should be 0, but wIe set it to 1 so later I can multiply it by the background-rates
   }
-  trans_list[total_states] = death_rates[i]
+
+  trans_list[total_states_tx_group] = death_rates[i]
+  
   return(trans_list)
 }
 
@@ -149,104 +153,82 @@ fill_state_trans <- function(i){ # should be updated for treatment_group and tre
 define_states <- function(is_treatment_group){
   states = list()
   
-  for (i in c(1:(disease_states))){
-      name = paste("State", i, "no_tx",sep = "_")
-      trans_list = fill_state_trans(i) # at this time I assume that each state have a fixed set of transitions. but if we decide to add more transitions between states model(e.g. an adverse event is reversible), the length of trans_list should be doubled for treatment group
+  for (i in c(1:(total_states_tx_group-1))){
+    cost = costs[i]
+    qaly = qalys[i]
+    
+    if(i <= disease_states){ #states with adverse events
+      has_adv_evnt = TRUE
+      name = paste("State", i,"with_adv_evnt", sep = "_")
+      trans_list = fill_state_trans(i) 
       exac_rate = exac_rates_notx[i]
-      cost = costs[i]
-      qaly = qalys[i]
-      curr_state <- model_state(i, name, exac_rate, cost, qaly, trans_list,FALSE) 
-      states[[length(states)+1]] <- curr_state
-  }
-
-  if(is_treatment_group){
-    for (i in c(1:(disease_states))){ 
-      #first add extra transitions for no_tx states
-      states[[i]]$trans_list = c(head(states[[i]]$trans_list,-1),rep(0,disease_states),tail(states[[i]]$trans_list,1)) # can be handled in the fill_states_trans function
-      
-      #then add tx-states
-      name = paste("State", i,"tx", sep = "_")
-      trans_list = fill_state_trans(i)
-      trans_list = c(rep(0,disease_states-1), trans_list) # can be handled in the fill_states_trans function
-      trans_list[i] = hearing_loss_RR + gast_evnt_RR #quit_rate 
-      exac_rate = get_exac_rates_tx()
-      cost = costs[i]
-      qaly = qalys[i]
-      curr_state<- model_state(disease_states+i, name, exac_rate, cost, qaly, trans_list,TRUE) 
-      states[[length(states)+1]] <- curr_state
     }
+    else{ # normal states
+      has_adv_evnt = FALSE
+      name = paste("State", i,"tx", sep = "_")
+      trans_list = fill_state_trans(i) 
+      if(is_treatment_group){
+        exac_rate = change_by_odds(exac_rates_notx[i],treatment_effect)
+        # ------------QUIT_RATE-----???----------
+      }
+      else{
+        exac_rate = exac_rates_notx[i]
+      }
+    }
+      curr_state <- model_state(name, exac_rate, cost, qaly, trans_list, has_adv_evnt) 
+      states[[length(states)+1]] <- curr_state
   }
-    curr_state = model_state(length(states)+1, "Death", 0, 0, 0, c(rep(0,(length(states))),1))  
+    curr_state = model_state("Death", 0, 0, 0, c(rep(0,(length(states))),1), FALSE)  
     states[[length(states)+1]] <- curr_state
 
   return(states)
 }
-#update transition matrix for each year
-update_trans_mat <- function(states_list, year, is_treatment_group){
-  
-  #     S1	      S2	      S3	      D
-  # S1	P(S1->S1)	P(S1->S2)	P(S1->S3)	P(S1->D)
-  # S2	P(S2->S1)	P(S2->S2)	P(S2->S3)	P(S2->D)
-  # S3	P(S3->S1)	P(S3->S2)	P(S3->S3)	P(S3->D)
 
-  if(is_treatment_group){
-    trans_mat = matrix(0, nrow = total_states_tx_group-1, ncol = total_states_tx_group, byrow = TRUE) # we don't need transitions from death_state to others as it's always = 0
-    for (i in c(1:(2*disease_states))){
-      trans_mat[i,] = states_list[[i]]$trans_list
-      trans_mat[i,total_states] = trans_mat[i,total_states]*background_mortality_rates[year]
-      if(!states_list[[i]]$adv_evnt){
-        trans_mat[i,i-disease_states] = trans_mat[i,i-disease_states]*(background_hearing_rates[year]+background_gast_rates[year])
-      }
-      trans_mat[i,i] = 1-(Reduce("+",trans_mat[i,c(i:total_states)]))
-    }
-  }
-  else{
-    trans_mat = matrix(0, nrow = total_states-1, ncol = total_states, byrow = TRUE)
-    for (i in c(1:(disease_states))){
-      trans_mat[i,] = states_list[[i]]$trans_list
-      trans_mat[i,total_states] = trans_mat[i,total_states]*background_mortality_rates[year]
-      trans_mat[i,i] = 1-(Reduce("+",trans_mat[i,c(i:total_states)]))
-    }
-  }
+#update transition matrix for each year
+get_trans_mat <- function(states_list, year, is_treatment_group){
   
+  trans_mat = matrix(0, nrow = total_states_tx_group-1, ncol = total_states_tx_group, byrow = TRUE) # we don't need transitions from death_state to others as it's always = 0
+  for (i in c(1:(total_states_tx_group-1))){ # OR "for s in states" for more adjustability  
+    trans_mat[i,] = states_list[[i]]$trans_list
+    trans_mat[i,total_states_tx_group] = trans_mat[i,total_states_tx_group]*background_mortality_rates[year]
+    if(!states_list[[i]]$has_adv_evnt){ 
+      trans_mat[i,i-disease_states] = trans_mat[i,i-disease_states]*(background_hearing_rates[year]+background_gast_rates[year])
+    }
+    trans_mat[i,i] = 1-(Reduce("+",trans_mat[i,c(i:total_states_tx_group)]))
+  }
   return(trans_mat)
+  
+  # Tansition Matrix:
+  #     S'1	        S'2	        S'3	        S1	        S2	        S3	       D
+  # S'1	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+  # S'2	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+  # S'3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+  # S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+  # S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+  # S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
 }
 
 markov_cal <- function(trans_mat, states_list, is_treatment_group){
 
-  
-  if(is_treatment_group){
-    distributions_mat = matrix(0, nrow = (total_years+1), ncol =(2*disease_states), byrow = TRUE) # it does not include death-rate as in this states the rates of all the results are = 0
-    results_mat = matrix(0 , nrow = (total_years+1), ncol = 3, byrow = TRUE) #for exac, cost, QALY
-    distributions_mat[1,] = c(rep(0,disease_states),initial_dists)
-    for (i in c(2:(total_years+1))){
-      for (j in c(1:(2*disease_states))){
-        distributions_mat[i,j] = sum( distributions_mat[(i-1),]*trans_mat[[i-1]][,j])
-      }
-      results_mat[i,1] = sum(distributions_mat[i,]*unlist(lapply(head(states_list,-1),function(x) x$exac_rate)))# Here we are assuming that those who experienced adv_events up to this year, have an exac_rate similar to those who don't get tx (so we assume they didn't recieve tx in the last year)
-      results_mat[i,2] = sum(distributions_mat[i,]*unlist(lapply(head(states_list,-1),function(x) x$cost)))+results_mat[i,1]*exac_cost + sum(adv_evnt_cost*distributions_mat[i,1:disease_states])
-      results_mat[i,3] = sum(distributions_mat[i,]*unlist(lapply(head(states_list,-1),function(x) x$qaly)))+results_mat[i,1]*exac_qaly + sum(adv_evnt_qaly*distributions_mat[i,1:disease_states])
+
+  distributions_mat = matrix(0, nrow = (total_years+1), ncol =(total_states_tx_group), byrow = TRUE) 
+  results_mat = matrix(0 , nrow = (total_years+1), ncol = 3, byrow = TRUE) #for exac, cost, QALY
+  distributions_mat[1,] = c(rep(0,disease_states),initial_dists,0)
+  for (i in c(2:(total_years+1))){
+    for (j in c(1:(total_states_tx_group))){
+      distributions_mat[i,j] = sum( distributions_mat[(i-1),]*trans_mat[[i-1]][,j])
     }
-  }
-  else{
-    distributions_mat = matrix(0, nrow = (total_years+1), ncol =(disease_states), byrow = TRUE)
-    results_mat = matrix(0 , nrow = (total_years+1), ncol = 3, byrow = TRUE) #for exac, cost and QALY
-    distributions_mat[1,] = initial_dists
-    for (i in c(2:(total_years+1))){
-      for (j in c(1:(disease_states))){
-        distributions_mat[i,j] = sum( distributions_mat[(i-1),]*trans_mat[[i-1]][,j])
-      }
-      results_mat[i,1] = sum(distributions_mat[i,]*unlist(lapply(head(states_list,-1),function(x) x$exac_rate)))
-      results_mat[i,2] = sum(distributions_mat[i,]*unlist(lapply(head(states_list,-1),function(x) x$cost)))+results_mat[i,1]*exac_cost # adverse_evnt_cost should be added here!
-      results_mat[i,3] = sum(distributions_mat[i,]*unlist(lapply(head(states_list,-1),function(x) x$qaly)))+results_mat[i,1]*exac_qaly
-    }
+    results_mat[i,1] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$exac_rate)))# Here we are assuming that those who experienced adv_events up to this year, have an exac_rate similar to those who don't get tx (so we assume they didn't recieve tx in the last year)
+    results_mat[i,2] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$cost)))+results_mat[i,1]*exac_cost+ sum( adv_evnt_cost*distributions_mat[i,1:disease_states])
+    results_mat[i,3] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$qaly)))+results_mat[i,1]*exac_qaly + sum(adv_evnt_qaly*distributions_mat[i,1:disease_states])
+    # results_mat[i,2] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$cost)))+results_mat[i,1]*exac_cost + sum( adv_evnt_cost*distributions_mat[i,1:disease_states])
+    # results_mat[i,3] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$qaly)))+results_mat[i,1]*exac_qaly + sum(adv_evnt_qaly*distributions_mat[i,1:disease_states])
   }
 
   print("distributions matrix:")
   print(distributions_mat)
   print("results (Exacerbations - Costs - QALYs):")
   print(results_mat)
-  
 }
 
 run_model<- function(is_treatment_group){ # is_treatment_group = TRUE => running the model for the treatment group
@@ -255,10 +237,14 @@ run_model<- function(is_treatment_group){ # is_treatment_group = TRUE => running
   states = define_states(is_treatment_group)
   transition_matrix = list()
   for (i in c(1:total_years)){
-    transition_matrix[[i]] = update_trans_mat(states,i,is_treatment_group)
-    set_params()
-    states = define_states(is_treatment_group )
+    transition_matrix[[i]] = get_trans_mat(states,i,is_treatment_group)
+    # print("sanity check:")
+    # for(j in c(1:(total_states-1))){ #length(transition_matrix[[i]][1,])
+    #   print(sum(transition_matrix[[i]][j,]))
+    # }
   }
+  # print("transition matrix:")
+  # print(transition_matrix)
   markov_cal(transition_matrix,states,is_treatment_group)
 
 }
