@@ -1,253 +1,580 @@
 
-# ============= Prameters derived from studies ================ #
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+library(reshape2)
+library(patchwork) # To display 2 charts together
+# library(hrbrthemes)
+library(xlsx)
+library(Rmisc)
 
-total_states = 4 # S1, S2, S3, D
-total_states_tx_group = 7 # S1_tx, S1_notx, etc., D
-disease_states = 3
-total_years= 20
+estBetaParams <- function(mu, var) {
 
-#exacerbation_rates for each state => GAMMA
-exac_params = c(900,0.000666667,
-                760,0.001,
-                875,0.002)
-exac_params_mat = matrix(data = exac_params, nrow = disease_states, ncol = 2, byrow = TRUE)
-exac_rates_notx = integer(disease_states)
-
-#costs for each state => GAMMA
-cost_params = c(16,86.4375,
-                16,118.5,
-                16,609.5)
-cost_params_mat = matrix(data = cost_params, nrow = disease_states, ncol = 2, byrow = TRUE)
-costs = integer(disease_states)
-
-#utilities for each state => NORMAL
-qaly_params = c(0.8,0.05,
-                0.72,0.03,
-                0.72,0.03)
-qaly_params_mat = matrix(data = qaly_params, nrow = disease_states, ncol = 2, byrow = TRUE)
-qalys = integer(disease_states)
-
-#trans_rates to next state, for each state => GAMMA (Add to this if more transitions are available. Also, change define_states)
-transitions_params = c(1929,0.00001,
-                       1440,0.00001)
-trans_params_mat = matrix(data = transitions_params, nrow = disease_states-1, ncol = 2, byrow = TRUE)
-trans_to_nexts = integer(disease_states-1)
-
-#death_rates for each state => LOGNORMAL
-death_params = c(0.277631737,0.14966725,
-                 0.565313809,0.199080427,
-                 1.088561953,0.250212629)
-death_params_mat = matrix(data = death_params, nrow = disease_states, ncol = 2, byrow = TRUE)
-death_rates = integer(disease_states)
-
-#S1,S2,S3
-initial_dists <-c(0.3,0.4,0.3)
-
-# in 20 years
-background_mortality_rates <- c(0.01593,0.01752,0.0193,0.02124,0.02329,0.02555, 0.0281,0.03104,
-                                0.03429,0.03779,0.04165,0.04599, 0.05091,0.05631, 0.0621,0.06846,
-                                0.07555, 0.08353,0.09214,0.10129)
-discount_rate = 0.015
-treatment_cost = 250
-exac_cost_params =  c(16,114.609375)
-exac_cost = 0
-
-exac_qaly_params =  c(-0.06,0.02)
-exac_qaly = 0
-
-#OR of exac reduction in tx vs no-tx
-tx_effect_params =   c(-0.287682072, 0.098658874 )# retrieved from Albert's study
-treatment_effect = 0.73
-
-hearing_loss_params =  c(0.155292884, 0.064346722) # retrieved from Li's study
-hearing_loss_RR = 1.168 # in 20 years
-background_hearing_rates <- rep(0.0001, 20)
-hearing_loss_cost = 0
-hearing_loss_qaly = 0
   
-gast_evnt_params = c(0.171429116, 0.226130529) # retrieved from Li's study
-gast_evnt_RR = 1.187 
-# in 20 years
-background_gast_rates <- rep(0.0001, 20)
-gast_evnt_cost = 0
-gast_evnt_qaly = 0
+  alpha <- ((1 - mu) / var - 1 / mu) * mu ^ 2
+  beta <- alpha * (1 / mu - 1)
 
-adv_evnt_cost = 0
-adv_evnt_qaly = 0
-# ================================================================== #
+  return(params = list(alpha = alpha, beta = beta))
+}
 
-set_params <- function(){
-  for (i in c(1:(disease_states))){
-    exac_rates_notx[i] <<- rgamma(1, shape = exac_params_mat[i,1], scale = exac_params_mat[i,2]) # '<<-' resets the global value with the new value
-    costs[i] <<- rgamma(1,shape = cost_params_mat[i,1], scale = cost_params_mat[i,2])
-    qalys[i] <<- rnorm(1,mean = qaly_params_mat[i,1], sd = qaly_params_mat[i,2])
-    if (i != disease_states){
-      trans_to_nexts[i] <<- rgamma(1,shape = trans_params_mat[i,1], scale = trans_params_mat[i,2])
+set_probabilistic_params <- function(input){ #Gamma : œ: shape  ß:scale ( if ß=1 : standard Gamma distribution. ß =   œ = rate)
+
+  stages <- input$gold_stages
+  
+  treatment_effect_rnd <- rlnorm(1,mean = log(input$treatment_effect), sd = (log(input$treatment_effect_UCI)-log(input$treatment_effect))/1.96)
+  input$treatment_effect <- treatment_effect_rnd
+  
+  hearing_loss_RR_rnd <- rlnorm(1,mean = log(input$hearing_loss_RR), sd = (log(input$hearing_loss_RR_UCI)-log(input$hearing_loss_RR))/1.96)
+  input$hearing_loss_RR <- hearing_loss_RR_rnd
+  # if(is.na(log(input$hearing_loss_RR))){
+  #   print("log(input$hearing_loss_RR) is Nan")
+  # }
+  # if(is.na((log(input$hearing_loss_RR_UCI)-log(input$hearing_loss_RR))/1.96)){
+  #   print("(log(input$hearing_loss_RR_UCI)-log(input$hearing_loss_RR))/1.96 is Nan")
+  # }
+
+  hearing_rate_change_rnd <- rnorm(1,mean = input$hearing_rate_change, sd =(input$hearing_rate_change_UCI-input$hearing_rate_change)/1.96)
+  input$hearing_rate_change <- hearing_rate_change_rnd
+
+  gast_evnt_RR_rnd <- rlnorm(1,mean = log(input$gast_evnt_RR), sd = (log(input$gast_evnt_RR_UCI)-log(input$gast_evnt_RR))/1.96)
+  input$gast_evnt_RR <- gast_evnt_RR_rnd
+
+  CVD_risk_rnd <- rlnorm(1,mean = log(input$CVD_risk), sd = (log(input$CVD_risk_UCI)-log(input$CVD_risk))/1.96)
+  input$CVD_risk <- CVD_risk_rnd
+  
+  trans_probs_rnd = integer(stages)
+  exac_rates_notx_rnd = integer(stages)
+  severe_exac_rates_notx_rnd = integer(stages)
+  qaly_baseline_rnd = integer(stages)
+  qaly_loss_exac_rnd = integer(stages)
+  qaly_loss_exac_severe_rnd = integer(stages)
+  
+  for (i in c(1:stages)){
+    if(i<stages){
+      trans_probs_rnd[i] <- rbeta(1, shape1 = input$trans_probs_alpha[i], shape2 = input$trans_probs_beta[i])
     }
-    death_rates[i] <<- exp(rnorm(1,mean = death_params_mat[i,1], sd = death_params_mat[i,2]))
-  }
-  #duplicate for adverse-event states
-  exac_rates_notx <<- c(exac_rates_notx,exac_rates_notx)
-  costs <<- c(costs,costs)
-  qalys <<- c(qalys,qalys)
-  trans_to_nexts <<- c(trans_to_nexts,0,trans_to_nexts,0)
-  print(trans_to_nexts)
-  death_rates<<- c(death_rates,death_rates)
-
-  exac_cost <<- rgamma(1,shape = exac_cost_params[1], scale = exac_cost_params[2])
-  exac_qaly <<- rnorm(1,mean = exac_qaly_params[1], sd= exac_qaly_params[2])
-  
-  treatment_effect <<- exp(rnorm(1,mean = tx_effect_params[1], sd = tx_effect_params[2]))
-  hearing_loss_RR <<- exp(rnorm(1,mean = hearing_loss_params[1], sd = hearing_loss_params[2]))
-  gast_evnt_RR <<- exp(rnorm(1,mean = gast_evnt_params[1], sd = gast_evnt_params[2]))
-  
-  # gast_evnt_cost <<- qgamma()
-  # gast_evnt_qaly <<- qgamma()
-  # 
-  # hearing_lossc-cost <<- qgamma()
-  # hearing_loss_qaly <<- qgamma()
-  
-}
-
-resistance_effect <- function(year, odds_ratio){ # will change according to the resistance effect but if it affect the rate, it would be much better
-  return(odds_ratio)
-}
-
-change_by_odds <- function(rate, odds_ratio){ # change rate -> prob -> odds and then the reverse. 
-  prob = 1-exp(-rate)
-  odds = prob/(1-prob)
-  new_odds = odds_ratio*odds
-  new_prob = new_odds/(1+new_odds)
-  return(new_prob)
-}
-
-
-model_state <- function(name, exac_rate, cost, qaly, trans_list, has_adv_evnt) {
-  value <- list(name = name, exac_rate = exac_rate, cost = cost, qaly = qaly, trans_list = trans_list, has_adv_evnt = has_adv_evnt)
-  attr(value, 'class') <- 'model_state' #  test it with: print(attr(states_list[[1]],'class'))
-  return(value)
-}
-
-print.model_state<- function(obj){
-  cat('Name = ', obj$name, '\n')
-  cat('Exac_rate = ', obj$exac_rate, '\n')
-  cat('Cost = ', obj$cost, '\n')
-  cat('QALY = ', obj$qaly, '\n')
-  cat('Transition list = ', obj$trans_list, '\n')
-  cat('get treatment? ', obj$has_adv_evnt, '\n')
-}
-
-fill_state_trans <- function(i){ 
-  trans_list = integer(total_states_tx_group)
-  trans_list[i+1] = trans_to_nexts[i]
-  if (disease_states  < i && i < total_states_tx_group ){ #!!!!!!!! HEARINH _ RR and GAS_RR are not considered
-    trans_list[i-disease_states] = 1 # The occurance of adverse effects is not associated with the disease-state so this probability should be 0, but wIe set it to 1 so later I can multiply it by the background-rates
-  }
-
-  trans_list[total_states_tx_group] = death_rates[i]
-  
-  return(trans_list)
-}
-
-
-define_states <- function(is_treatment_group){
-  states = list()
-  
-  for (i in c(1:(total_states_tx_group-1))){
-    cost = costs[i]
-    qaly = qalys[i]
     
-    if(i <= disease_states){ #states with adverse events
-      has_adv_evnt = TRUE
-      name = paste("State", i,"with_adv_evnt", sep = "_")
-      trans_list = fill_state_trans(i) 
-      exac_rate = exac_rates_notx[i]
-    }
-    else{ # normal states
-      has_adv_evnt = FALSE
-      name = paste("State", i,"tx", sep = "_")
-      trans_list = fill_state_trans(i) 
-      if(is_treatment_group){
-        exac_rate = change_by_odds(exac_rates_notx[i],treatment_effect)
-        # ------------QUIT_RATE-----???----------
-      }
-      else{
-        exac_rate = exac_rates_notx[i]
-      }
-    }
-      curr_state <- model_state(name, exac_rate, cost, qaly, trans_list, has_adv_evnt) 
-      states[[length(states)+1]] <- curr_state
-  }
-    curr_state = model_state("Death", 0, 0, 0, c(rep(0,(length(states))),1), FALSE)  
-    states[[length(states)+1]] <- curr_state
+    #--------------------------------------Exacerbation rates-------------------------------
+    exac_rates_notx_rnd[i] <- rlnorm(1, mean = log(input$exac_rates_notx[i]), sd = (log(input$exac_rates_notx_UCI[i])-log(input$exac_rates_notx[i]))/1.96)
+    severe_exac_rates_notx_rnd[i] <- rlnorm(1, mean = log(input$severe_exac_rates_notx[i]), sd = (log(input$severe_exac_rates_notx_UCI[i])-log(input$severe_exac_rates_notx[i]))/1.96)
 
-  return(states)
+    # if(is.na(log(input$severe_exac_rates_notx[i]))){
+    #   print("log(input$severe_exac_rates_notx[i]) is Nan")
+    # }
+    # if(is.na((log(input$severe_exac_rates_notx_UCI[i])-log(input$severe_exac_rates_notx[i]))/1.96)){
+    #   print("(log(input$severe_exac_rates_notx_UCI[i])-log(input$severe_exac_rates_notx[i]))/1.96 is Nan")
+    # }
+        #--------------------------------------UTILITY-------------------------------
+    qaly_base_params = estBetaParams(input$qaly_baseline[i],((input$qaly_baseline_UCI[i]-input$qaly_baseline[i])/1.96)^2)
+    qaly_baseline_rnd[i]<- rbeta(n=1, shape1 = qaly_base_params$alpha, shape2 = qaly_base_params$beta)
+
+    qaly_exac_params = estBetaParams(input$qaly_loss_exac[i],input$qaly_loss_exac_SE[i]^2)
+    qaly_loss_exac_rnd[i]<- rbeta(n=1, shape1 = qaly_exac_params$alpha, shape2 = qaly_exac_params$beta)
+
+    qaly_sev_exac_params = estBetaParams(input$qaly_loss_exac_severe[i],input$qaly_loss_exac_severe_SE[i]^2)
+    qaly_loss_exac_severe_rnd[i] <- rbeta(n=1, shape1 = qaly_sev_exac_params$alpha, shape2 = qaly_sev_exac_params$beta)
+
+  }
+  
+  input$trans_probs <- c(trans_probs_rnd,trans_probs_rnd,0)
+  input$exac_rates_notx <- c(exac_rates_notx_rnd,exac_rates_notx_rnd,0)
+  input$severe_exac_rates_notx <- c(severe_exac_rates_notx_rnd,severe_exac_rates_notx_rnd,0)
+  input$qaly_baseline <- c(qaly_baseline_rnd,qaly_baseline_rnd,0)
+  input$qaly_loss_exac <- c(qaly_loss_exac_rnd,qaly_loss_exac_rnd,0)
+  input$qaly_loss_exac_severe <- c(qaly_loss_exac_severe_rnd,qaly_loss_exac_severe_rnd,0)
+
+  exac_mortality_params = estBetaParams(input$exac_mortality_rate,((input$exac_mortality_rate_UCI-input$exac_mortality_rate)/1.96)^2)
+  exac_mortality_rnd <- rbeta(n=1, shape1 = exac_mortality_params$alpha, shape2 =exac_mortality_params$beta)
+  input$exac_mortality_rate <- exac_mortality_rnd
+
+  qaly_hearing_params = estBetaParams(input$qaly_loss_hearing,input$qaly_loss_hearing_SE^2)
+  qaly_loss_hearing_rnd <- rbeta(n=1, shape1 = qaly_hearing_params$alpha, shape2 = qaly_hearing_params$beta)
+  input$qaly_loss_hearing <-qaly_loss_hearing_rnd
+
+  hearing_improvement_rnd <- rnorm(n = 1, mean = input$hearing_improvement, sd = ((input$hearing_improvement_UCI-input$hearing_improvement)/1.96))
+  input$hearing_improvement <- hearing_improvement_rnd
+
+  qaly_GI_params = estBetaParams(input$qaly_loss_GI,input$qaly_loss_GI_SE^2)
+  qaly_loss_GI_rnd <- rbeta(n=1, shape1 = qaly_GI_params$alpha, shape2 = qaly_GI_params$beta)
+  input$qaly_loss_GI <- qaly_loss_GI_rnd
+
+  # cat('treatment_effect = ', input$treatment_effect, '\n')
+  # cat('hearing_loss_RR = ', input$hearing_loss_RR, '\n')
+  # cat('hearing_rate_change = ', input$hearing_rate_change, '\n')
+  # cat('gast_evnt_RR = ', input$gast_evnt_RR, '\n')
+  # cat('CVD_risk = ', input$CVD_risk, '\n')
+  # cat('trans_probs ', input$trans_probs, '\n')
+  # 
+  # cat('exac_mortality_rate = ', input$exac_mortality_rate, '\n')
+  # # 
+  # cat('exac_rates_notx  = ', input$exac_rates_notx , '\n')
+  # cat('severe_exac_rates_notx  = ',  input$severe_exac_rates_notx , '\n')
+  # 
+  # cat('qaly_baseline = ', input$qaly_baseline, '\n')
+  # cat('qaly_loss_exac = ', input$qaly_loss_exac, '\n')
+  # cat('qaly_loss_exac_severe = ', input$qaly_loss_exac_severe, '\n')
+  # cat('qaly_loss_hearing = ', input$qaly_loss_hearing, '\n')
+  # cat('qaly_loss_GI = ', input$qaly_loss_GI, '\n')
+  # 
+  # cat('hearing_improvement= ', input$hearing_improvement, '\n')
+  # print("-------------------------------------")
+  
+  return(input)
+}
+
+calculate_mortality <- function(input,year, state, is_tx_group){ 
+  # age = input$avg_age + year
+  mortality <- rep(0, 2)
+  prob_exac_mortality <- 1-exp(-input$exac_mortality_rate)
+  # odds_exac_death = exp(-13 + 0.049*(age)+7.7) #source: EPIC
+
+  if(is_tx_group){
+    prob_exac_death = (1-exp(-input$severe_exac_rates_tx[state]))*(prob_exac_mortality)
+    # prob_exac_death = (1-exp(-input$severe_exac_rates_tx[state]))*(odds_exac_death/(odds_exac_death+1))
+    
+    # Added risk due to CVD
+    mortality[1] = (input$background_mortality_probs[year]*(360+5*input$CVD_risk)/365)
+    #Mortality due to exacerbation
+    mortality[2] =  prob_exac_death
+
+  }
+  else{
+    prob_exac_death = (1-exp(-input$severe_exac_rates_notx[state]))*(prob_exac_mortality)
+    # prob_exac_death = (1-exp(-input$severe_exac_rates_notx[state]))*(odds_exac_death/(odds_exac_death+1))
+    mortality[1] = input$background_mortality_probs[year] 
+    mortality[2] = prob_exac_death
+  }
+  return(mortality)
+}
+
+current_effect <- function(year,treatment_effect,resist_param){
+  if (year>1){
+    # effect = treatment_effect^(2/year)    # 0.7808472 - 0.9635736
+
+    effect = treatment_effect^exp(-resist_param*year)
+    # effect = 1
+
+  }
+  else{
+    effect = treatment_effect
+  }
+  return(effect)
 }
 
 #update transition matrix for each year
-get_trans_mat <- function(states_list, year, is_treatment_group){
+# Tansition Matrix:
+#     S'1	        S'2	        S'3	        S1	        S2	        S3	       D
+# S'1	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+# S'2	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+# S'3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+# S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+# S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+# S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
+fill_trans_mat <- function(input, year, is_treatment_group){
   
-  trans_mat = matrix(0, nrow = total_states_tx_group-1, ncol = total_states_tx_group, byrow = TRUE) # we don't need transitions from death_state to others as it's always = 0
-  for (i in c(1:(total_states_tx_group-1))){ # OR "for s in states" for more adjustability  
-    trans_mat[i,] = states_list[[i]]$trans_list
-    trans_mat[i,total_states_tx_group] = trans_mat[i,total_states_tx_group]*background_mortality_rates[year]
-    if(!states_list[[i]]$has_adv_evnt){ 
-      trans_mat[i,i-disease_states] = trans_mat[i,i-disease_states]*(background_hearing_rates[year]+background_gast_rates[year])
+  trans_mat = matrix(0, nrow = input$states_num, ncol = input$states_num+1, byrow = TRUE) # the extra column is to keep the mortality due to exac for each state
+  for (i in c(1:(input$states_num-1))){
+    trans_mat[i,i+1] = input$trans_probs[i]
+    if (i <= input$gold_stages){ 
+      trans_mat[i,i+input$gold_stages] = input$hearing_rate_change
+      if (is_treatment_group){
+        trans_mat[i,i+input$gold_stages] = trans_mat[i,i+input$gold_stages]*input$hearing_loss_RR
+      }
     }
-    trans_mat[i,i] = 1-(Reduce("+",trans_mat[i,c(i:total_states_tx_group)]))
+    mortality = calculate_mortality(input,year,i,is_treatment_group)
+    trans_mat[i,input$states_num] = mortality[1]+mortality[2]  # mortality + mortality due to exac
+    trans_mat[i,input$states_num+1] = mortality[2]  #mortality due to exac
+    
+    trans_mat[i,i] = 1-(Reduce("+",trans_mat[i,c(i:input$states_num)]))
   }
+  trans_mat[input$states_num,input$states_num] = 1
+
   return(trans_mat)
-  
-  # Tansition Matrix:
-  #     S'1	        S'2	        S'3	        S1	        S2	        S3	       D
-  # S'1	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
-  # S'2	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
-  # S'3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
-  # S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
-  # S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
-  # S3	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)
 }
-
-markov_cal <- function(trans_mat, states_list, is_treatment_group){
-
-
-  distributions_mat = matrix(0, nrow = (total_years+1), ncol =(total_states_tx_group), byrow = TRUE) 
-  results_mat = matrix(0 , nrow = (total_years+1), ncol = 3, byrow = TRUE) #for exac, cost, QALY
-  distributions_mat[1,] = c(rep(0,disease_states),initial_dists,0)
-  for (i in c(2:(total_years+1))){
-    for (j in c(1:(total_states_tx_group))){
-      distributions_mat[i,j] = sum( distributions_mat[(i-1),]*trans_mat[[i-1]][,j])
+  
+markov_cal <- function(input, trans_mat, is_treatment_group){
+  
+  total_years <- input$total_years
+  states_num <- input$states_num
+  gold_stages <- input$gold_stages
+  discount_rate <- input$discount_rate
+  
+  distributions_mat = matrix(0, nrow = (total_years+1), ncol =(states_num), byrow = TRUE) 
+  results_mat = matrix(0 , nrow = (total_years), ncol = 24, byrow = TRUE) 
+  colnames(results_mat) = c("1.Total exacerbations:  ","2.Severe exacerbations:  ", "3.Have total hearing-loss by this time:  ",
+                            "4.New hearing-loss:  ","5.Rate of gast_events:  ","6.mortality rates: ",
+                            "7.QALY-loss due to exacerbations:  ","8.QALY-loss due to hearing-loss:  ","9.QALY-loss due to GIs: ",
+                            "10.Final QALY:  ", "11.alive: ", "12.base QALY: ", "13.discounted exacerbations", "14.discounted severe exacs:","15.discounted QALY:",
+                            "16.discounted hearing incidents:", "17.discounted GI symptoms:", "18.mortality due to CVD:","19.discounted mortality:(DELETED)",
+                            "20. death due to exacerbation", "21. death except exacerbation","22. discounted death due to exacerbation", "23.discounted death except exacerbation", 
+                            "24.discounted hearing prevalence:")
+  rownames(results_mat) = lapply(c(1:total_years), function(x) paste0("year ",x))
+  results_mat_discounted = results_mat
+  
+  distributions_mat[1,] = input$initial_dists
+  
+  for (i in c(1:(total_years))){
+    
+    for (j in c(1:(states_num))){
+      distributions_mat[i+1,j] = sum(distributions_mat[i,]*trans_mat[[i]][,j]) # So, each row of dist_mat[i,] shows what was the dists in the beginning of year i => dist_mat[2,7] shows how many died during the first year or how many poeple are not alive in the beginning of year 2
     }
-    results_mat[i,1] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$exac_rate)))# Here we are assuming that those who experienced adv_events up to this year, have an exac_rate similar to those who don't get tx (so we assume they didn't recieve tx in the last year)
-    results_mat[i,2] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$cost)))+results_mat[i,1]*exac_cost+ sum( adv_evnt_cost*distributions_mat[i,1:disease_states])
-    results_mat[i,3] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$qaly)))+results_mat[i,1]*exac_qaly + sum(adv_evnt_qaly*distributions_mat[i,1:disease_states])
-    # results_mat[i,2] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$cost)))+results_mat[i,1]*exac_cost + sum( adv_evnt_cost*distributions_mat[i,1:disease_states])
-    # results_mat[i,3] = sum(distributions_mat[i,]*unlist(lapply(states_list,function(x) x$qaly)))+results_mat[i,1]*exac_qaly + sum(adv_evnt_qaly*distributions_mat[i,1:disease_states])
+    
+    if(is_treatment_group){
+      #First update the exac_rates values for each year
+      exac_rates <- c((input$exac_rates_notx[1:gold_stages]*current_effect(i,input$treatment_effect,input$resist_param)),input$exac_rates_notx[(gold_stages+1):states_num])
+      severe_exac_rates <- c((input$severe_exac_rates_notx[1:gold_stages]*current_effect(i,input$treatment_effect,input$resist_param)),input$severe_exac_rates_notx[(gold_stages+1):states_num])
+      tx_GI_rate <- input$rate_gast_events*input$gast_evnt_RR
+      results_mat[i,18] = (1-distributions_mat[i,states_num])*input$background_mortality_probs[i]*((360+5*input$CVD_risk)/365-1) # those who will not be alive next year due to CVD:  alive in this year*back*excess risk of CVD = (RR-1)
+    }
+    else{
+      exac_rates <- input$exac_rates_notx
+      severe_exac_rates <- input$severe_exac_rates_notx
+      tx_GI_rate <- input$rate_gast_events
+      results_mat[i,18] = 0
+    }
+    
+    results_mat[i,1] = sum(distributions_mat[i,]*exac_rates)
+    results_mat[i,2] = sum(distributions_mat[i,]*severe_exac_rates)
+    
+    # prevalence of hearing loss:
+    results_mat[i,3] = sum(distributions_mat[i,(gold_stages+1):(states_num-1)]) 
+    
+    
+    #GI rates
+    results_mat[i,5] = tx_GI_rate*sum(distributions_mat[i,1:gold_stages]) + input$rate_gast_events*sum(distributions_mat[i,(gold_stages+1):(states_num-1)])
+    
+    #Exac QALY loss:
+    results_mat[i,7] = sum(distributions_mat[i,]*((exac_rates-severe_exac_rates)*input$qaly_loss_exac + severe_exac_rates*input$qaly_loss_exac_severe)) 
+    
+    if(i > 1){
+      # new incidents of hearing-loss
+      for (j in c((gold_stages+1):(states_num-1))){
+        results_mat[i,4] = results_mat[i,4] + (distributions_mat[i,j] - distributions_mat[i-1,j]*trans_mat[[i-1]][j,j])
+      }
+      
+      # total death in this year
+      results_mat[i,6] = distributions_mat[i,states_num]-distributions_mat[i-1,states_num] 
+      # death due to exac:
+      results_mat[i,20] =  sum(distributions_mat[i-1,]*trans_mat[[i-1]][,(states_num+1)])
+      # other death
+      results_mat[i,21] = results_mat[i,6] - results_mat[i,20]
+    }
+    
+    # alive
+    results_mat[i,11] = 1-distributions_mat[i,states_num]
+    
+    #hearing impairment QALY loss:
+    results_mat[i,8] = results_mat[i,4]*input$qaly_loss_hearing + (results_mat[i,3]-results_mat[i,4])*(input$qaly_loss_hearing+input$hearing_improvement)
+    #GI QALY loss:
+    results_mat[i,9] = results_mat[i,5]*input$qaly_loss_GI
+    
+    results_mat[i,10] = sum(distributions_mat[i,]*input$qaly_baseline)-results_mat[i,7]-results_mat[i,8]-results_mat[i,9]
+    results_mat[i,12] = sum(distributions_mat[i,]*input$qaly_baseline)
+    
+    results_mat[i,13] = results_mat[i,1]/(1+discount_rate)^(i-1)
+    results_mat[i,14] = results_mat[i,2]/(1+discount_rate)^(i-1)
+    results_mat[i,15] = results_mat[i,10]/(1+discount_rate)^(i-1)
+    results_mat[i,16] = results_mat[i,4]/(1+discount_rate)^(i-1)
+    results_mat[i,24] = results_mat[i,3]/(1+discount_rate)^(i-1)
+    results_mat[i,17] = results_mat[i,5]/(1+discount_rate)^(i-1)
+    results_mat[i,22] = results_mat[i,20]/(1+discount_rate)^(i-1)
+    results_mat[i,23] = results_mat[i,21]/(1+discount_rate)^(i-1)
+    
   }
-
-  print("distributions matrix:")
-  print(distributions_mat)
-  print("results (Exacerbations - Costs - QALYs):")
-  print(results_mat)
-}
-
-run_model<- function(is_treatment_group){ # is_treatment_group = TRUE => running the model for the treatment group
   
-  set_params()
-  states = define_states(is_treatment_group)
-  transition_matrix = list()
-  for (i in c(1:total_years)){
-    transition_matrix[[i]] = get_trans_mat(states,i,is_treatment_group)
-    # print("sanity check:")
-    # for(j in c(1:(total_states-1))){ #length(transition_matrix[[i]][1,])
-    #   print(sum(transition_matrix[[i]][j,]))
-    # }
-  }
-  # print("transition matrix:")
-  # print(transition_matrix)
-  markov_cal(transition_matrix,states,is_treatment_group)
-
+  # print("distributions matrix:")
+  # for (i in c(1:dim(distributions_mat)[1])){
+  #   cat(paste0(i,":  "))
+  #   for (j in c(1:dim(distributions_mat)[2])){
+  #     cat(distributions_mat[i,j],"    ")
+  #   }
+  #   cat("\n")
+  # }
+  
+  # print(distributions_mat)
+  
+  return(results_mat)
 }
 
 
+run_model_probabilistically <- function(){ # is_treatment_group = TRUE => running the model for the treatment group
+
+  MC_cycles = 1000
+  MC_results_notx= matrix(0, nrow = MC_cycles, ncol = 14, byrow = TRUE) # length = length of final_results_val?
+  MC_results_tx= matrix(0, nrow = MC_cycles, ncol = 14, byrow = TRUE) # length = length of final_results_val?
+  
+  colnames(MC_results_notx) <- (c("total_exacs" ,"total_sev_exacs" , "hearing_prevalence" ,"hearing_incidents", "GI_events" , "mortality" ,"mortality_exac" , "mortality_not_exac" , "base_qaly" ,
+                                  "qaly_loss_exac" , "qaly_loss_hearing" , "qaly_loss_GI" , "total_qaly" , "life_expec" ))
+  colnames(MC_results_tx) <- (c("total_exacs" ,"total_sev_exacs" , "hearing_prevalence" ,"hearing_incidents", "GI_events" , "mortality" ,"mortality_exac" , "mortality_not_exac" , "base_qaly" ,
+                                  "qaly_loss_exac" , "qaly_loss_hearing" , "qaly_loss_GI" , "total_qaly" , "life_expec" ))
+  
+
+  for ( cycle in c(1:MC_cycles) ) {
+    input <- model_input$values
+    input <- set_probabilistic_params(input)
+
+    #--------PLACEBO---------
+    print(cycle)
+    is_treatment_group = FALSE
+
+    transition_matrix = list()
+    for (i in c(1:input$total_years)){
+      transition_matrix[[i]] = fill_trans_mat(input,i,is_treatment_group)
+    }
+
+    results = markov_cal(input, transition_matrix,is_treatment_group)
+
+    final_results = list(total_exacs = sum(results[,13]),total_sev_exacs = sum(results[,14]),
+                         hearing_prev = sum(results[,3]),hearing_incidents = sum(results[,16]),GI_events = sum(results[,17]),
+                         mortality = sum(results[,6]), mortality_exac = sum(results[,20]), mortality_not_exac = sum(results[,21]),
+                         base_qaly = sum(results[,12]),qaly_loss_exac = sum(results[,7]), qaly_loss_hearing = sum(results[,8]), qaly_loss_GI = sum(results[,9]),
+                         total_qaly = sum(results[,15]), life_expec = sum(results[,11]))
+
+
+    final_results_vals = as.vector(unlist(final_results))
+    MC_results_notx[cycle,] = final_results_vals
+
+
+    # placebo_qalys = c(placebo_qalys, final_results$total_qaly)
+    # if(index ==101){
+    #   print(final_results$total_qaly)
+    #   print("treatment:")
+    # }
+
+    #--------TREATMENT---------
+    print(cycle)
+    is_treatment_group = TRUE
+
+    transition_matrix = list()
+    for (i in c(1:input$total_years)){
+
+      input$exac_rates_tx <- c((input$exac_rates_notx[1:input$gold_stages]*current_effect(i,input$treatment_effect,input$resist_param)),input$exac_rates_notx[(input$gold_stages+1):input$states_num])
+      input$severe_exac_rates_tx <- c((input$severe_exac_rates_notx[1:input$gold_stages]*current_effect(i,input$treatment_effect,input$resist_param)),input$severe_exac_rates_notx[(input$gold_stages+1):input$states_num])
+
+      transition_matrix[[i]] = fill_trans_mat(input,i,is_treatment_group)
+    }
+
+    results = markov_cal(input, transition_matrix,is_treatment_group)
+
+    final_results = list(total_exacs = sum(results[,13]),total_sev_exacs = sum(results[,14]),
+                                               hearing_prev = sum(results[,3]),hearing_incidents = sum(results[,16]),GI_events = sum(results[,17]), mortality = sum(results[,6]),
+                                               mortality_exac = sum(results[,20]), mortality_not_exac = sum(results[,21]),base_qaly = sum(results[,12]),
+                                               qaly_loss_exac = sum(results[,7]), qaly_loss_hearing = sum(results[,8]), qaly_loss_GI = sum(results[,9]),
+                                               total_qaly = sum(results[,15]), life_expec = sum(results[,11]))
+
+    final_results_vals = as.vector(unlist(final_results))
+
+    MC_results_tx[cycle,] = final_results_vals
+    
+
+  }
+  
+  print("--------PLACEBO---------")
+  results_avg = colMeans(MC_results_notx)
+  print(results_avg)
+
+  print("+++++++++++ result per person/year +++++++++++")
+  results_py <- (MC_results_notx/MC_results_notx[,"life_expec"])
+  results_avg_py = colMeans(results_py)
+  print(results_avg_py)
+
+  print("+++++++++++ CIs +++++++++++")
+  for (i in c(1:ncol(MC_results_notx))){
+    print(colnames(MC_results_notx)[i])
+    print(quantile(results_py[,i],c(0.025, 0.975) ))
+
+  }
+  print("--------TREATMENT---------")
+  results_avg = colMeans(MC_results_tx)
+  print(results_avg)
+  
+  print("+++++++++++ result per person/year +++++++++++")
+  results_py <- (MC_results_tx/MC_results_tx[,"life_expec"])
+  results_avg_py = colMeans(results_py)
+  print(results_avg_py)
+  
+  print("+++++++++++ CIs +++++++++++")
+  for (i in c(1:ncol(MC_results_tx))){
+    print(colnames(MC_results_tx)[i])
+    print(quantile(results_py[,i],c(0.025, 0.975) ))
+  }
+  
+  print("--------Net QALY---------")
+  
+  delta <- (MC_results_tx[,"total_qaly"]- MC_results_notx[,"total_qaly"])
+  print("probability of positive net QALY:")
+  print(pnorm(0, mean = mean(delta), sd = sd(delta), lower.tail=FALSE))
+  plot_netqaly(delta)
+  
+}
+
+plot_netqaly <- function(net_qaly){
+  df <- data.frame(net_qaly)
+
+  ggplot(df, aes(net_qaly)) + 
+    geom_histogram(aes(y =..density..),
+                   breaks = seq(-0.3, 0.3, by = 0.025), 
+                   colour = "grey", 
+                   fill = "white") +
+    theme(plot.subtitle = element_text(vjust = 1),plot.title = element_text(vjust = 0)) +
+    xlim(-0.3,0.5) +
+    ylab ("Frequency") + xlab ("\n Incremental Net QALY") + theme_minimal()+
+    stat_function(fun = dnorm, args = list(mean = mean(df$net_qaly), sd = sd(df$net_qaly)), color="cyan4")+
+    # geom_segment(aes(x = mean(net_qaly), xend = mean(net_qaly), yend = 0, y=10),color = "tomato" )+
+    geom_segment(aes(x = 0, xend = 0, yend = 0, y=1.3),color = "tomato" )
+}
+
+sensitivity_analysis_probabilistic <- function(){ 
+  
+  positive_net_qaly = c()
+  net_qaly = c()  
+  MC_cycles = 1000
+  
+  # var_range <- seq(0.1,1,0.05)
+  # model = model_input$values$qaly_loss_hearing
+  
+  # var_range <- seq(0,0.3,0.05)
+  # model = model_input$values$qaly_loss_GI
+  
+  # var_range <- seq(0,3,0.05)
+  # model = 0.0377
+  
+  var_range <- seq(0,1,0.1)
+  model = model_input$values$resist_param
+  
+  # AVG_exac_rate = 1.626
+  # AVG_exac_disqaly = 0.0377
+  
+
+  
+  for ( k in var_range) { # parameter range
+    delta = c()
+    proportion = c()
+    for(cycle in c(1:MC_cycles)){   # Monte Carlo
+      print(cycle)
+      input <- model_input$values
+
+      # input$exac_mortality_rate = 0.067
+      # input$exac_mortality_rate_LCI = 0.057
+      # input$exac_mortality_rate_UCI = 0.077
+
+      # input$treatment_effect = 0.65
+      # input$treatment_effect_LCI = 0.55
+      # input$treatment_effect_UCI = 0.77
+      input$exac_mortality_rate = 0.156 *0.2
+      input$exac_mortality_rate_LCI = 0.109*0.2
+      input$exac_mortality_rate_UCI = 0.203*0.2
+      # 
+      # input$trans_probs = c(0.037,0.031,0,0.037,0.031,0)
+      # input$trans_probs_alpha = c(0.037,0.031,0,0.037,0.031,0)*c(0.55,0.15,0,0.55,0.15,0)*305000 # number of transitions
+      # input$trans_probs_beta =  c(0.55,0.15,0,0.55,0.15,0)*305000 - input$trans_probs_alpha # N - number of transitions. N from Hoogendoorn where Modereates are 55% of 305000, Severes are 15%
+      # 
+      input <- set_probabilistic_params(input)
+      
+      # input$initial_dists <-c(0,0,1,0,0,0,0)
+      # input$qaly_loss_exac  <- model_input$values$qaly_loss_exac * k
+      # input$qaly_loss_exac_severe  <- model_input$values$qaly_loss_exac_severe * k
+      # input$qaly_loss_GI  <- k
+      # input$qaly_loss_hearing <- k
+      
+
+      
+      # input$gast_evnt_RR <  k
+      # input$hearing_loss_RR <- k
+      
+      # input$qaly_baseline <- input$qaly_baseline* 0
+      
+      # input$treatment_effect  <- k
+      # Parameter of interest
+      # input$CVD_risk <- 1
+      # input$severe_exac_rates_notx  <- model_input$values$severe_exac_rates_notx * k
+      # input$exac_rates_notx  <- model_input$values$exac_rates_notx * k
+      
+      input$resist_param  <-  k
+      
+      # input$total_years <- 2
+      
+      # --------PLACEBO------------------------------------------
+      is_treatment_group = FALSE
+      
+      transition_matrix = list()
+      for (i in c(1:input$total_years)){
+        transition_matrix[[i]] = fill_trans_mat(input,i,is_treatment_group)
+      }
+      
+      results = markov_cal(input, transition_matrix,is_treatment_group)
+
+      placebo_qaly = sum(results[,15])
+      
+      # --------TREATMENT-----------------------------------------
+      is_treatment_group = TRUE
+      
+      transition_matrix = list()
+      for (i in c(1:input$total_years)){
+        
+        input$exac_rates_tx <- c((input$exac_rates_notx[1:input$gold_stages]*current_effect(i,input$treatment_effect,input$resist_param)),input$exac_rates_notx[(input$gold_stages+1):input$states_num])
+        input$severe_exac_rates_tx <- c((input$severe_exac_rates_notx[1:input$gold_stages]*current_effect(i,input$treatment_effect,input$resist_param)),input$severe_exac_rates_notx[(input$gold_stages+1):input$states_num])
+        
+        transition_matrix[[i]] = fill_trans_mat(input,i,is_treatment_group)
+      }
+      
+      results2 = markov_cal(input, transition_matrix,is_treatment_group)
+      
+      treatment_qaly = sum(results2[,15])
+      
+      # --------DELTA----------------------------------------------
+      delta = c(delta, (treatment_qaly - placebo_qaly)) 
+
+    }
+    # print(quantile(delta,c(0.025, 0.975) ))
+    
+    positive_net_qaly = c(positive_net_qaly, length(which(delta>0))/length(delta) )
+    net_qaly = c(net_qaly, mean(delta) )
+  }
+  print(net_qaly)
+  threshold <- var_range[min(which(net_qaly < 0))]#**
+  print(positive_net_qaly)
+  #**
+  plot_qaly( model, threshold, var_range, positive_net_qaly, net_qaly)
+  
+}
+
+plot_qaly <- function(model,threshold, var_range, positive_net_qaly, net_qaly){
+  
+  rate <- var_range
+  qaly <- net_qaly
+  prop <- positive_net_qaly
+  
+  
+  df <- data.frame(rate, qaly, prop)
+  
+  p_rate <- ggplot(data = df, aes(x=rate, y=qaly)) + geom_point() + geom_line() +
+    #geom_smooth() + 
+    ylab("Net QALY") + xlab("\n  Resistane param / exac mortality =  0.03 ")+
+    # ylab("Net QALY") + xlab("\n  Average disutility of mild/moderate exacerbations across the GOLD stages")+
+    
+    geom_vline(xintercept = threshold, color = "tomato") +
+    annotate("text", x = threshold, y = -0.1, label = "threshold", color = "tomato") +
+    geom_vline(xintercept = model, color = "#17A589") +
+    annotate("text", x = model, y = 0.2, label = "Expected value", color = "#17A589") +
+    # theme_tufte() +
+    # theme_ipsum()+
+    theme_minimal()+
+    theme(axis.line = element_line(color = 'black'))
+    
+    # theme(axis.line.y = element_line(color = 'black'), axis.text.x = element_blank(), axis.ticks.x = element_blank())
+  # p_prop <- ggplot(data = df, aes(x=rate, y=prop*100)) + geom_point() + geom_line() +
+  #   #geom_smooth() + 
+  #   ylab("Net QALY gain %")  + xlab("\n  Disutility due to hearing loss ") + 
+  #   geom_vline(xintercept = threshold, color = "tomato") +
+  #   geom_vline(xintercept = model, color = "#17A589") +
+  #   # scale_x_continuous(breaks = c(0, 0.25, 0.50, 0.69, 0.75, 1)) +
+  #   # theme_tufte() + 
+  #   # theme_ipsum()+
+  #   theme_minimal()+
+  #   theme(axis.line = element_line(color = 'black'))
+  # p_rate/p_prop
+  p_rate
+  
+}
 
