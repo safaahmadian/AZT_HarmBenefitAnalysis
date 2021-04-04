@@ -75,3 +75,24 @@ ggplot(huron, aes (x=year,y=level)) +
 #   xlim(0,1)+
 #   geom_vline(xintercept=0.2, linetype="dashed", color = "#DC7633")+
 #   geom_text(aes(x=0.2, label="\n Model", y=0.5,family = "sans"), color="#DC7633") 
+
+
+
+
+
+
+randomPlot <- ggplot(data_input) + geom_tile(aes(x = V1, y = V2, fill = V3)) + 
+  xlab("Mortality Rate") + 
+  ggtitle("Sensitivty Dooshvari") + 
+  theme_tufte()
+
+
+randomPlot
+
+ggsave(plot = randomPlot, filename = "randomPlot.png", heigh=)
+
+
+
+
+
+

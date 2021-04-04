@@ -32,9 +32,9 @@ init_input <- function() {
                                   0.024194,0.026342,0.029042,0.032001, 0.035443,0.039257, 0.043393,0.048163,
                                   0.053216, 0.059240,0.066564,0.074045) # SUM = 0.665567
   
-  input$exac_mortality_rate = 0.156 
-  input$exac_mortality_rate_LCI = 0.109
-  input$exac_mortality_rate_UCI = 0.203
+  input$exac_mortality_prob = 0.156 
+  input$exac_mortality_prob_LCI = 0.109
+  input$exac_mortality_prob_UCI = 0.203
   
   #OR of exac reduction in tx vs no-tx
   input$treatment_effect = 0.69
@@ -43,7 +43,7 @@ init_input <- function() {
   
   
   # resist_param = 0.34
-  input$resist_param = 0.2
+  input$resist_param = 0.22
   
   input$CVD_risk = 2.88
   input$CVD_risk_LCI = 1.79
@@ -75,10 +75,10 @@ init_input <- function() {
   input$severe_exac_rates_tx =  input$severe_exac_rates_notx
   input$exac_rates_tx  = input$exac_rates_notx
   
-  input$RR_exac_0hist <- 0.2689189
+  input$RR_exac_0hist <- c(0.16, 0.01) # estimate,SE
   input$RR_exac_1hist <- 1
-  input$RR_exac_2hist <- 1.137925 #obsExac.y1 >=2 
-  input$RR_exac_3hist <- 1.110175 #obsExac_moderate.y1 >=2 | obsExac_severe.y1 >=1
+  input$RR_exac_2hist <- c(1.3, 0.05)
+  input$RR_exac_3hist <- c(1.25, 0.05) #obsExac_moderate.y1 >=2 | obsExac_severe.y1 >=1
   
   input$qaly_baseline = c(0.787,0.750,0.647,0.787,0.750,0.647,0)
   input$qaly_baseline_LCI  = c(0.771,0.731,0.598,0.771,0.731,0.598,0)
