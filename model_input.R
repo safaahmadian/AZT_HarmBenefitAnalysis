@@ -23,9 +23,12 @@ init_input <- function() {
 
   input$trans_probs = c(0.034,0.03,0,0.034,0.03,0)
   input$trans_probs_alpha = c(0.034,0.03,0,0.034,0.03,0)*c(0.55,0.15,0,0.55,0.15,0)*305000 # number of transitions
-  input$trans_probs_beta =  c(0.55,0.15,0,0.55,0.15,0)*305000 - input$trans_probs_alpha # N - number of transitions. N from Hoogendoorn where Modereates are 55% of 305000, Severes are 15%
+  input$trans_probs_beta =  c(0.55,0.15,0,0.55,0.15,0)*305000 - input$trans_probs_alpha # N - number of transitions. N from Hoogendoorn et al. where Moderates are 55% of 305000, Severs are 15%
 
-
+  input$trans_probs_smoking = c(0.037,0.031,0,0.037,0.031,0)
+  input$trans_probs_alpha_smoking = c(0.037,0.031,0,0.037,0.031,0)*c(0.55,0.15,0,0.55,0.15,0)*305000 # number of transitions
+  input$trans_probs_beta_smoking =  c(0.55,0.15,0,0.55,0.15,0)*305000 - input$trans_probs_alpha # N - number of transitions. N from Hoogendoorn where Modereates are 55% of 305000, Severes are 15%
+  
   
   # in 20 years from 65 - 85
   input$background_mortality_probs <- c(0.012710,0.013621,0.014620,0.015770,0.017100,0.018428, 0.020317,0.022102,
@@ -42,14 +45,15 @@ init_input <- function() {
   input$treatment_effect_UCI = 0.89
   
   
-  # resist_param = 0.34
-  input$resist_param = 0.22
+  input$resist_param = 0.22  # 0.44 ^ exp(-2k) = 0.59 => log 0.59 (0.44) = exp(-2k) =>-1/2*ln(log 0.59 (0.44) = k = 0.22
   
   input$CVD_risk = 2.88
   input$CVD_risk_LCI = 1.79
   input$CVD_risk_UCI = 4.63
   
-  input$hearing_loss_RR = 1.168 # in 20 years
+  input$CVD_risk_length = 5
+  
+  input$hearing_loss_RR = 1.168 
   input$hearing_loss_RR_LCI = 1.030
   input$hearing_loss_RR_UCI = 1.325
   
@@ -62,7 +66,9 @@ init_input <- function() {
   input$gast_evnt_RR_LCI =0.761
   input$gast_evnt_RR_UCI = 1.849
   
-  input$rate_gast_events = 0.33   # does not depend on age
+  input$rate_gast_events = 0.33   # Although those three groups taken from Almario may overlap, since in an overlap we should multiply the QALY by 3, we can assume that for each event we have a separate patient=> e.g,. population is 150%*N 
+  input$rate_gast_events_alpha = 0.33*71812*(0.39+0.61*1.363)   
+  input$rate_gast_events_beta = 0.67*71812*(0.39+0.61*1.363) 
   
   input$severe_exac_rates_notx = c(0.16,0.22,0.28,0.16,0.22,0.28,0) #source: Hoogendoorn
   input$severe_exac_rates_notx_LCI = c(0.07,0.20,0.14)
@@ -75,31 +81,57 @@ init_input <- function() {
   input$severe_exac_rates_tx =  input$severe_exac_rates_notx
   input$exac_rates_tx  = input$exac_rates_notx
   
-  input$RR_exac_0hist <- c(0.16, 0.01) # estimate,SE
-  input$RR_exac_1hist <- 1
-  input$RR_exac_2hist <- c(1.3, 0.05)
-  input$RR_exac_3hist <- c(1.25, 0.05) #obsExac_moderate.y1 >=2 | obsExac_severe.y1 >=1
+  input$RR_exac_0hist = 0.16
+  input$RR_exac_0hist_SD = 0.007 # estimate,SD = CI_length/3.9
+  input$RR_exac_2hist = 1.3
+  input$RR_exac_2hist_SD = 0.05
+  input$RR_exac_3hist = 1.25
+  input$RR_exac_3hist_SD = 0.04
+  
+  input$RR_severe_exac_0hist = 0.16
+  input$RR_severe_exac_0hist_SD = 0.02
+  input$RR_severe_exac_2hist = 1.26
+  input$RR_severe_exac_2hist_SD =  0.1
+  input$RR_severe_exac_3hist = 1.36
+  input$RR_severe_exac_3hist_SD = 0.1
+  
   
   input$qaly_baseline = c(0.787,0.750,0.647,0.787,0.750,0.647,0)
   input$qaly_baseline_LCI  = c(0.771,0.731,0.598,0.771,0.731,0.598,0)
   input$qaly_baseline_UCI  = c(0.802 ,0.768,0.695,0.802,0.768,0.695,0)
   
-  input$qaly_loss_exac = c(0.0155,0.0488,0.0488,0.0155,0.0488 ,0.0488,0)
-  input$qaly_loss_exac_SE = c(0.0075,0.0125,0.0125,0.0075,0.0125,0.0125,0)
+  # Used Spencer et al. and Sadatsafavi et al. : 
+  #  = (Baseline(x1)/4 - QALY during exacerbation 3-month period (x2)*/4) => 
+  # mean = x1/4 - x2/4 , variance1 = (n.SE1/4)^2 => variance (X1/4-X2/4) = n.(SE1/4)^2 + n.(SE2/4)^2 
+  #*QALY during 3-month exacerbation period is equal to average QALY of a year with four exacerbations)
+  input$qaly_loss_Spencer_baseline_SE = c(0.0075,0.0125,0.0125,0.0075,0.0125,0.0125,0)
   
+  input$qaly_loss_exac_mod = c(0.0155,0.0488,0.0488,0.0155,0.0488 ,0.0488,0) 
+  input$qaly_loss_exac_mod_var = (input$qaly_loss_Spencer_baseline_SE)^2 + c(0.0075,0.0125,0.0125,0.0075,0.0125,0.0125,0)^2
+
+  # SE : 0.01060660 0.01767767 0.01767767 0.01060660 0.01767767 0.01767767 0.00000000
+
   input$qaly_loss_exac_severe  = c(0.0683,0.0655,0.0655,0.0683,0.0655,0.0655,0)
-  input$qaly_loss_exac_severe_SE = c(0.0075,0.0125,0.0125,0.0075,0.0125,0.0125,0)
-  
+  input$qaly_loss_exac_severe_var = (input$qaly_loss_Spencer_baseline_SE)^2 + c(0.0175,0.0125,0.0125,0.0175,0.0125,0.0125,0)^2
+
+  # SE: 0.01903943 0.01767767 0.01767767 0.01903943 0.01767767 0.01767767 0.00000000
+
+  #derived from NICE using SD of Barton 2004 (0.02) 
   input$qaly_loss_hearing = 0.187
-  input$qaly_loss_hearing_SE = 0.02
+  input$qaly_loss_hearing_var = 0.0004
   
+  #derived from Sullivan et al.
+  input$qaly_loss_hearing_EQ5D = 0.006
+  input$qaly_loss_hearing_SE = 0.0001
+
+  #derived from Barton et al. 
   input$hearing_improvement = 0.06
   input$hearing_improvement_LCI = 0.044
   input$hearing_improvement_UCI = 0.073
   
-  
+  #derived from Sullivan et al. (The largest SE among the three conditions)
   input$qaly_loss_GI = 0.0261
-  input$qaly_loss_GI_SE = 0.0001
+  input$qaly_loss_GI_SE = 0.0002
   
   
   # ================================================================== #
