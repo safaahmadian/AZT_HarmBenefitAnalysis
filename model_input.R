@@ -17,7 +17,7 @@ init_input <- function() {
   
   input$avg_age = 65
   
-  input$discount_rate = 0.05
+  input$discount_rate = 0.015
   
   input$initial_dists <-c(0.26,0.4,0.34,0,0,0,0)
 
@@ -33,7 +33,12 @@ init_input <- function() {
   # in 20 years from 65 - 85
   input$background_mortality_probs <- c(0.012710,0.013621,0.014620,0.015770,0.017100,0.018428, 0.020317,0.022102,
                                   0.024194,0.026342,0.029042,0.032001, 0.035443,0.039257, 0.043393,0.048163,
-                                  0.053216, 0.059240,0.066564,0.074045) # SUM = 0.665567
+                                  0.053216, 0.059240,0.066564,0.074045,
+                                  
+                                  0.08422825,0.09438508, 0.10555131,0.11777638, 0.13109840, 0.14554106,
+                                  0.1611136, 0.17780478, 0.19558155,0.21438729, 0.23413857, 0.25472827,
+                                  0.27602455, 0.29787291, 0.32010340)
+                                   # SUM = 0.665567
   
   input$exac_mortality_prob = 0.156 
   input$exac_mortality_prob_LCI = 0.109
@@ -60,7 +65,7 @@ init_input <- function() {
   # reference_hearing_loss = -1.169+0.02312*65   #ß0+ß1.Age
   input$hearing_rate_change = 0.023 #ß1  => p(S1->S'1)[year=i] = p(S1->S'1)[year=i-1] + hearing_rate_change
   input$hearing_rate_change_LCI = 0.011
-  input$hearing_rate_change_UCI = 0.0325
+  input$hearing_rate_change_UCI = 0.035
   
   input$gast_evnt_RR = 1.187 
   input$gast_evnt_RR_LCI =0.761

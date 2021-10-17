@@ -1,6 +1,6 @@
-
 library(ggplot2)
 library(dplyr)
+
 library(ggthemes)
 library(hrbrthemes)
 
@@ -267,6 +267,7 @@ markov_cal <- function(input, trans_mat, is_treatment_group){
     #exac QALY loss:
     results_mat[i,10] = sum(distributions_mat[i,]*((exac_rates-severe_exac_rates)*input$qaly_loss_exac_mod + severe_exac_rates*input$qaly_loss_exac_severe)) 
     #hearing impairment QALY loss:
+    # results_mat[i,11] = results_mat[i,4]*input$qaly_loss_hearing + (results_mat[i,3]-results_mat[i,4])*(input$qaly_loss_hearing-input$hearing_improvement)*0.34 + (results_mat[i,3]-results_mat[i,4])*(input$qaly_loss_hearing)*0.66
     results_mat[i,11] = results_mat[i,4]*input$qaly_loss_hearing + (results_mat[i,3]-results_mat[i,4])*(input$qaly_loss_hearing-input$hearing_improvement)
     #GI QALY loss:
     results_mat[i,12] = results_mat[i,5]*input$qaly_loss_GI
@@ -290,7 +291,7 @@ markov_cal <- function(input, trans_mat, is_treatment_group){
   #   }
   #   cat("\n")
   # }
-  # print(distributions_mat)
+  print(distributions_mat)
   
   return(results_mat)
 }
@@ -370,10 +371,9 @@ run_model_probabilistically <- function(){ # is_treatment_group = TRUE => runnin
 
   for ( cycle in c(1:MC_cycles) ) {
     input <- model_input$values
-    input <- set_probabilistic_params(input)
     
     # ==========================Sensitivity analysis=====================
-    input$discount_rate <- 0.03
+    # input$discount_rate <- 0.03
     # input$CVD_risk <- 1
     # input$treatment_effect = 0.73
     # input$treatment_effect_LCI = 0.63
@@ -387,9 +387,9 @@ run_model_probabilistically <- function(){ # is_treatment_group = TRUE => runnin
     
     
     # ==========================Sub_group analysis=====================
-    #exac_history
-    # input$exac_rates_notx <- input$exac_rates_notx*input$RR_exac_3hist
-    # input$severe_exac_rates_notx <- input$severe_exac_rates_notx*input$RR_severe_exac_3hist
+    # exac_history
+    # input$exac_rates_notx <- input$exac_rates_notx*input$RR_exac_0hist
+    # input$severe_exac_rates_notx <- input$severe_exac_rates_notx*input$RR_severe_exac_0hist
 
     # #current_smokers:
     # input$trans_probs <- input$trans_probs_smoking
@@ -404,6 +404,8 @@ run_model_probabilistically <- function(){ # is_treatment_group = TRUE => runnin
     
     
     # ==========================End of sub_group analysis=================
+    
+    input <- set_probabilistic_params(input)
     
     #--------PLACEBO---------
     print(cycle)
@@ -538,7 +540,8 @@ plot_netqaly <- function(net_qaly){
 draw_resistance_function <- function(){
   df <- data.frame(t = c(1:20))
   fun.1 <- function(t){
-    r = 0.69^exp(-(t-1))
+    # ^exp(-(t-1))
+    r = 0.69
     return(r)
   }
   
@@ -683,9 +686,11 @@ sensitivity_analysis_probabilistic <- function(){
   #5. change caption of figure 
   #6. change efile name
   
-  var_range <- seq(1,3,0.2)
-  model <- 1.168
+  # var_range <- seq(1,3,0.2)
+  # model <- 1.168
   # var_range <- seq(0,0.175, 0.025)
+  var_range <- seq(0,1,0.1)
+  model <- 0.22
   
     for ( k in var_range) { # parameter range
       delta = c()
@@ -693,17 +698,18 @@ sensitivity_analysis_probabilistic <- function(){
       for(cycle in c(1:MC_cycles)){   # Monte Carlo
         print(cycle)
         input <- model_input$values
-        input <- set_probabilistic_params(input)
         
         # input$treatment_effect = 0.73
         # input$treatment_effect_LCI = 0.63
         # input$treatment_effect_UCI = 0.84
         
+        input <- set_probabilistic_params(input)
+        
         # input$discount_rate <- 5
 
         # input$exac_mortality_prob = k
         # 
-        # input$resist_param  <- 1
+        input$resist_param  <- k
         # input$exac_mortality_prob <- exac_mort_range[z]
         
         # input$exac_mortality_prob = 0.067
@@ -729,7 +735,7 @@ sensitivity_analysis_probabilistic <- function(){
         
         
         # input$gast_evnt_RR <-  k
-        input$hearing_loss_RR <- k
+        # input$hearing_loss_RR <- k
         
         # input$qaly_baseline <- input$qaly_baseline* 0
         
