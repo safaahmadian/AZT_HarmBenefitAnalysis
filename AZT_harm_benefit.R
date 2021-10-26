@@ -239,33 +239,32 @@ markov_cal <- function(input, trans_mat, is_treatment_group){
     }
     
     
-    results_mat[i,1] = sum(distributions_mat[i,]*exac_rates)
-    results_mat[i,2] = sum(distributions_mat[i,]*severe_exac_rates)
+    results_mat[i,1] = sum(distributions_mat[i+1,]*exac_rates)
+    results_mat[i,2] = sum(distributions_mat[i+1,]*severe_exac_rates)
     
     # prevalence of hearing loss:
-    results_mat[i,3] = sum(distributions_mat[i,(gold_stages+1):(states_num-1)]) 
+    results_mat[i,3] = sum(distributions_mat[i+1,(gold_stages+1):(states_num-1)]) 
     
     #GI rates
-    results_mat[i,5] = tx_GI_rate*sum(distributions_mat[i,1:gold_stages]) + input$rate_gast_events*sum(distributions_mat[i,(gold_stages+1):(states_num-1)])
+    results_mat[i,5] = tx_GI_rate*sum(distributions_mat[i+1,1:gold_stages]) + input$rate_gast_events*sum(distributions_mat[i+1,(gold_stages+1):(states_num-1)])
+
+    # new incidents of hearing-loss
+    results_mat[i,4] = sum(distributions_mat[i,1:gold_stages])*tx_hearing_incidence
     
-    if(i > 1){
-      # new incidents of hearing-loss
-      results_mat[i,4] = sum(distributions_mat[i-1,1:gold_stages])*tx_hearing_incidence
+    # new deaths in the beginning of this year
+    results_mat[i,6] = distributions_mat[i+1,states_num]-distributions_mat[i,states_num] 
+    # deaths due to exac:
+    results_mat[i,7] =  sum(distributions_mat[i,]*trans_mat[[i]][,(states_num+1)])
+    # other deaths
+    results_mat[i,8] = results_mat[i,6] - results_mat[i,7]
 
-
-      # new deaths in the beginning of this year
-      results_mat[i,6] = distributions_mat[i,states_num]-distributions_mat[i-1,states_num] 
-      # deaths due to exac:
-      results_mat[i,7] =  sum(distributions_mat[i-1,]*trans_mat[[i-1]][,(states_num+1)])
-      # other deaths
-      results_mat[i,8] = results_mat[i,6] - results_mat[i,7]
-    }
+    
     # alive
-    results_mat[i,9] = 1-distributions_mat[i,states_num]
+    results_mat[i,9] = 1-distributions_mat[i+1,states_num]
     
     
     #exac QALY loss:
-    results_mat[i,10] = sum(distributions_mat[i,]*((exac_rates-severe_exac_rates)*input$qaly_loss_exac_mod + severe_exac_rates*input$qaly_loss_exac_severe)) 
+    results_mat[i,10] = sum(distributions_mat[i+1,]*((exac_rates-severe_exac_rates)*input$qaly_loss_exac_mod + severe_exac_rates*input$qaly_loss_exac_severe)) 
     #hearing impairment QALY loss:
     # results_mat[i,11] = results_mat[i,4]*input$qaly_loss_hearing + (results_mat[i,3]-results_mat[i,4])*(input$qaly_loss_hearing-input$hearing_improvement)*0.34 + (results_mat[i,3]-results_mat[i,4])*(input$qaly_loss_hearing)*0.66
     results_mat[i,11] = results_mat[i,4]*input$qaly_loss_hearing + (results_mat[i,3]-results_mat[i,4])*(input$qaly_loss_hearing-input$hearing_improvement)
@@ -273,10 +272,10 @@ markov_cal <- function(input, trans_mat, is_treatment_group){
     results_mat[i,12] = results_mat[i,5]*input$qaly_loss_GI
     
     #total QALY
-    results_mat[i,13] = sum(distributions_mat[i,]*input$qaly_baseline)
+    results_mat[i,13] = sum(distributions_mat[i+1,]*input$qaly_baseline)
     results_mat[i,14] = results_mat[i,13]-results_mat[i,10]-results_mat[i,11]-results_mat[i,12]
 
-    results_mat[i,15] = results_mat[i,14]/(1+discount_rate)^(i-1)
+    results_mat[i,15] = results_mat[i,14]/(1+discount_rate)^(i)
     
    
   }
@@ -291,7 +290,7 @@ markov_cal <- function(input, trans_mat, is_treatment_group){
   #   }
   #   cat("\n")
   # }
-  print(distributions_mat)
+  # print(distributions_mat)
   
   return(results_mat)
 }
@@ -371,14 +370,16 @@ run_model_probabilistically <- function(){ # is_treatment_group = TRUE => runnin
 
   for ( cycle in c(1:MC_cycles) ) {
     input <- model_input$values
+    input <- set_probabilistic_params(input)
     
     # ==========================Sensitivity analysis=====================
-    # input$discount_rate <- 0.03
+    # input$discount_rate <- 0
     # input$CVD_risk <- 1
-    # input$treatment_effect = 0.73
-    # input$treatment_effect_LCI = 0.63
-    # input$treatment_effect_UCI = 0.84
-
+    # input$treatment_effect = 0.69
+    # input$treatment_effect_LCI = 0.54
+    # input$treatment_effect_UCI = 0.89
+    # input <- set_probabilistic_params(input)
+    
     # input$hearing_improvement <- 0
     # qaly_hearing_params = estBetaParams(input$qaly_loss_hearing_EQ5D,input$qaly_loss_hearing_SE^2)
     # input$qaly_loss_hearing <- rbeta(n=1, shape1 = qaly_hearing_params$alpha, shape2 = qaly_hearing_params$beta)
@@ -388,8 +389,8 @@ run_model_probabilistically <- function(){ # is_treatment_group = TRUE => runnin
     
     # ==========================Sub_group analysis=====================
     # exac_history
-    # input$exac_rates_notx <- input$exac_rates_notx*input$RR_exac_0hist
-    # input$severe_exac_rates_notx <- input$severe_exac_rates_notx*input$RR_severe_exac_0hist
+    # input$exac_rates_notx <- input$exac_rates_notx*input$RR_exac_3hist
+    # input$severe_exac_rates_notx <- input$severe_exac_rates_notx*input$RR_severe_exac_3hist
 
     # #current_smokers:
     # input$trans_probs <- input$trans_probs_smoking
@@ -405,7 +406,6 @@ run_model_probabilistically <- function(){ # is_treatment_group = TRUE => runnin
     
     # ==========================End of sub_group analysis=================
     
-    input <- set_probabilistic_params(input)
     
     #--------PLACEBO---------
     print(cycle)
@@ -526,14 +526,14 @@ plot_netqaly <- function(net_qaly){
     geom_area(stat = "function", args = list(mean = mean(df$net_qaly), sd = sd(df$net_qaly)), fun = dnorm, fill = "#E8F8F5", xlim = c(0, 0.6), size = 1) +
     # geom_segment(aes(x = mean(net_qaly), xend = mean(net_qaly), yend = 0, y=10),color = "tomato" )+
     geom_histogram(aes(y =..density..),
-                   breaks = seq(-0.1, 0.6, by = 0.025), 
+                   breaks = seq(-0.05, 0.6, by = 0.025), 
                    colour = "grey", fill = "white", alpha = .2) +
     theme(text = element_text(size=14), plot.subtitle = element_text(vjust = 1),plot.title = element_text(vjust = 0)) +
-    xlim(-0.1,0.6)+
+    xlim(-0.05,0.6)+
     geom_segment(aes(x = 0, xend = 0, yend = 0, y=0.75),color = "tomato", size= 1 )
     
   print(p)
-  ggsave(plot = p, filename = "netQALY_hist3.pdf", height=15, units = "cm", dpi=300)
+  ggsave(plot = p, filename = "netQALY_hist1.pdf", height=15, units = "cm", dpi=300)
   
 }
 
@@ -662,8 +662,8 @@ sensitivity_analysis_probabilistic <- function(){
   net_qaly = c()  
   MC_cycles = 1000
   
-  # var_range <- seq(0.1,1,0.05)
-  # model = model_input$values$qaly_loss_hearing
+  # var_range <- seq(0,1,0.1)
+  # model = 0.19
   
   # var_range <- seq(0,0.3,0.05)
   # model = model_input$values$qaly_loss_GI
@@ -690,7 +690,7 @@ sensitivity_analysis_probabilistic <- function(){
   # model <- 1.168
   # var_range <- seq(0,0.175, 0.025)
   var_range <- seq(0,1,0.1)
-  model <- 0.22
+  model <- 0.73
   
     for ( k in var_range) { # parameter range
       delta = c()
@@ -699,9 +699,9 @@ sensitivity_analysis_probabilistic <- function(){
         print(cycle)
         input <- model_input$values
         
-        # input$treatment_effect = 0.73
-        # input$treatment_effect_LCI = 0.63
-        # input$treatment_effect_UCI = 0.84
+        # input$treatment_effect = 0.69
+        # input$treatment_effect_LCI = 0.54
+        # input$treatment_effect_UCI = 0.89
         
         input <- set_probabilistic_params(input)
         
@@ -709,7 +709,7 @@ sensitivity_analysis_probabilistic <- function(){
 
         # input$exac_mortality_prob = k
         # 
-        input$resist_param  <- k
+        # input$resist_param  <- k
         # input$exac_mortality_prob <- exac_mort_range[z]
         
         # input$exac_mortality_prob = 0.067
@@ -739,7 +739,7 @@ sensitivity_analysis_probabilistic <- function(){
         
         # input$qaly_baseline <- input$qaly_baseline* 0
         
-        # input$treatmen t_effect  <- k
+        # input$treatment_effect  <- k
         # Parameter of interest
         # input$CVD_risk <- 1
         # input$CVD_risk_length <- k
@@ -808,12 +808,12 @@ plot_qaly <- function(model,threshold, var_range, positive_net_qaly, net_qaly){
   
   p_rate <- ggplot(data = df, aes(x=rate, y=qaly)) + geom_point() + geom_line() +
     #geom_smooth() + 
-    ylab("Net QALY") + xlab("\n  The relative risk of hearing loss related to AZT")+
+    ylab("Net QALY") + xlab("\n  The relative risk of exacerbations in treatment group")+
     # ylab("Net QALY") + xlab("\n  Average disutility of mild/moderate exacerbations across the GOLD stages")+
     
     geom_vline(xintercept = threshold, color = "tomato", size = 1.5) +
     annotate("text", x = threshold, y = 0.1, label = threshold, color = "tomato") +
-    geom_vline(xintercept = model, color = "#17A589", size = 1.5) +
+    geom_vline(xintercept = model, color = "#17A589", size = 1.5, linetype="dashed") +
     annotate("text", x = model, y = 0.15, label = model, color = "#17A589") +
 
     # theme_tufte() +
@@ -835,7 +835,7 @@ plot_qaly <- function(model,threshold, var_range, positive_net_qaly, net_qaly){
   #   theme(axis.line = element_line(color = 'black'))
   # p_rate/p_prop
   # p_rate
-  ggsave(plot = p_rate, filename = "3One_way_sensitivity_hearingRR.pdf", height=15, units = "cm", dpi=300)
+  ggsave(plot = p_rate, filename = "One_way_sensitivity_AZT_RR.pdf", height=15, units = "cm", dpi=300)
   print(p_rate)
   
 }

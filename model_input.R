@@ -13,11 +13,11 @@ init_input <- function() {
   
   input$states_num = 7 # S1_tx,S2_tx,S3_tx, S1_notx, S2_notx,S3_notx,D
   input$gold_stages = 3
-  input$total_years= 20
+  input$total_years= 35
   
   input$avg_age = 65
   
-  input$discount_rate = 0.015
+  input$discount_rate = 0.03
   
   input$initial_dists <-c(0.26,0.4,0.34,0,0,0,0)
 
@@ -45,10 +45,12 @@ init_input <- function() {
   input$exac_mortality_prob_UCI = 0.203
   
   #OR of exac reduction in tx vs no-tx
-  input$treatment_effect = 0.69
-  input$treatment_effect_LCI = 0.54
-  input$treatment_effect_UCI = 0.89
-  
+  # input$treatment_effect = 0.69
+  # input$treatment_effect_LCI = 0.54
+  # input$treatment_effect_UCI = 0.89
+  input$treatment_effect = 0.73
+  input$treatment_effect_LCI = 0.63
+  input$treatment_effect_UCI = 0.84
   
   input$resist_param = 0.22  # 0.44 ^ exp(-2k) = 0.59 => log 0.59 (0.44) = exp(-2k) =>-1/2*ln(log 0.59 (0.44) = k = 0.22
   
