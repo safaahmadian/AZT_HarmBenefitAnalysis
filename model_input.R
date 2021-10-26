@@ -13,7 +13,7 @@ init_input <- function() {
   
   input$states_num = 7 # S1_tx,S2_tx,S3_tx, S1_notx, S2_notx,S3_notx,D
   input$gold_stages = 3
-  input$total_years= 35
+  input$total_years= 20
   
   input$avg_age = 65
   
