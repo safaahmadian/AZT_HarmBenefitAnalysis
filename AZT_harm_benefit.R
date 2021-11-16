@@ -837,6 +837,5 @@ plot_qaly <- function(model,threshold, var_range, positive_net_qaly, net_qaly){
   # p_rate
   ggsave(plot = p_rate, filename = "One_way_sensitivity_AZT_RR.pdf", height=15, units = "cm", dpi=300)
   print(p_rate)
-  
 }
 
