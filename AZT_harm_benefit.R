@@ -167,7 +167,7 @@ current_effect <- function(year,treatment_effect,resist_param){
 }
 
 #update transition matrix for each year
-# Tansition Matrix:
+# Transition Matrix is sth like this:
 #     S'1	        S'2	        S'3	        S1	        S2	        S3	       D	         D_exac
 # S'1	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)	P(S'1->D_exac)
 # S'2	P(S'1->S'1)	P(S'1->S'2)	P(S'1->S'3)	P(S'1->S1)	P(S'1->S2)	P(S'1->S3)	P(S'1->D)	P(S'1->D_exac)
@@ -184,7 +184,7 @@ fill_trans_mat <- function(input, year, is_treatment_group){
     trans_mat[i,i+1] = input$trans_probs[i]
     if (i <= input$gold_stages){ 
       trans_mat[i,i+input$gold_stages] = input$hearing_rate_change
-      if (is_treatment_group){  # if changed to 0/1 => we can just have:  trans_mat[i,i+input$gold_stages] = input$hearing_rate_change*input$hearing_loss_RR^is_treatment_group
+      if (is_treatment_group){  
         trans_mat[i,i+input$gold_stages] = trans_mat[i,i+input$gold_stages]*input$hearing_loss_RR
       }
     }
@@ -221,7 +221,7 @@ markov_cal <- function(input, trans_mat, is_treatment_group){
   for (i in c(1:(total_years))){
     
     for (j in c(1:(states_num))){
-      distributions_mat[i+1,j] = sum(distributions_mat[i,]*trans_mat[[i]][,j]) # So, each row of dist_mat[i,] shows what is the distribution in the beginning of year i => dist_mat[2,7] shows how many died during the first year or how many poople are not alive in the beginning of year 2
+      distributions_mat[i+1,j] = sum(distributions_mat[i,]*trans_mat[[i]][,j]) # So, each row of dist_mat[i,] shows what is the distribution in the beginning of year i => dist_mat[2,7] shows how many died during the first year or how many individuals are not alive in the beginning of year 2
     }
     
     if(is_treatment_group){

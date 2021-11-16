@@ -73,7 +73,7 @@ init_input <- function() {
   input$gast_evnt_RR_LCI =0.761
   input$gast_evnt_RR_UCI = 1.849
   
-  input$rate_gast_events = 0.33   # Although those three groups taken from Almario may overlap, since in an overlap we should multiply the QALY by 3, we can assume that for each event we have a separate patient=> e.g,. population is 150%*N 
+  input$rate_gast_events = 0.33   
   input$rate_gast_events_alpha = 0.33*71812*(0.39+0.61*1.363)   
   input$rate_gast_events_beta = 0.67*71812*(0.39+0.61*1.363) 
   
